@@ -1,0 +1,8 @@
+# IDE specific config files
+.vscode
+
+# Python packages
+venv
+
+# Compiled byte-code
+__pycache__
