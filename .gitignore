@@ -1,6 +1,9 @@
 # IDE specific config files
 .vscode
 
+# Environement configuration
+*.env
+
 # Python packages
 venv
 
