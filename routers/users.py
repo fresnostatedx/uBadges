@@ -1,15 +1,18 @@
+# Standard library imports
 import os
 from datetime import datetime, timedelta
 from enum import Enum, unique
 
+# Third party imports
+import jwt
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-import jwt
-from passlib.context import CryptContext
 from pydantic import BaseModel
 from starlette.status import HTTP_401_UNAUTHORIZED
 
+# Package imports
 from core.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
+from services.security import verify_password, get_password_hash
 
 class Token(BaseModel):
     access_token: str
@@ -54,15 +57,6 @@ fake_user_db = {
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/users/token")
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
-
-
-def get_password_hash(password):
-    return pwd_context.hash(password)
 
 
 def get_user(db, username: str):
