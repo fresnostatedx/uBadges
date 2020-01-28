@@ -1,6 +1,5 @@
 # Standard library imports
 import os
-from datetime import datetime, timedelta
 from enum import Enum, unique
 
 # Third party imports
@@ -11,8 +10,9 @@ from pydantic import BaseModel
 from starlette.status import HTTP_401_UNAUTHORIZED
 
 # Package imports
-from core.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
+from core.config import SECRET_KEY, ALGORITHM
 from services.security import verify_password, get_password_hash
+from services.jwt import create_access_token, JWTPayload
 
 class Token(BaseModel):
     access_token: str
@@ -74,17 +74,6 @@ def authenticate_user(fake_db, username: str, password: str):
     return user
 
 
-def create_access_token(*, data: dict, expires_delta: timedelta = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minute=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, str(SECRET_KEY), algorithm=ALGORITHM)
-    return encoded_jwt
-
-
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
         status_code=HTTP_401_UNAUTHORIZED,
@@ -118,11 +107,8 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"}
         )
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user.username},
-        expires_delta=access_token_expires
-    )
+    payload = JWTPayload(sub=user.username)
+    access_token = create_access_token(payload=payload)
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.get("/")
