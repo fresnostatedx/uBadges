@@ -1,43 +1,19 @@
 # Standard library imports
 import os
-from enum import Enum, unique
 
 # Third party imports
 import jwt
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel
 from starlette.status import HTTP_401_UNAUTHORIZED
 
 # Package imports
 from core.config import SECRET_KEY, ALGORITHM
 from services.security import verify_password, get_password_hash
-from services.jwt import create_access_token, JWTPayload
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-
-class TokenData(BaseModel):
-    username: str = None
-
-
-class UserRole(str, Enum):
-    ADMIN = "admin"
-    OWNER = "owner"
-    MANAGER = "manager"
-
-
-class User(BaseModel):
-    username: str
-    email: str
-    role: UserRole
-
-
-class UserInDB(User):
-    hashed_password: str
-
+from services.jwt import create_access_token
+from models.users import User, UserInDB, UserRole
+from models.jwt import JWTPayload
+from models.tokens import Token, TokenData
 
 fake_user_db = {
     "bob": {

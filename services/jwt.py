@@ -7,10 +7,7 @@ from pydantic import BaseModel
 
 # Package imports
 from core.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
-
-class JWTPayload(BaseModel):
-    exp: datetime = None
-    sub: str 
+from models.jwt import JWTPayload
 
 
 def create_access_token(*, payload: JWTPayload, expires_delta: timedelta = None):
