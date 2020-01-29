@@ -2,19 +2,29 @@
 from enum import Enum, unique
 
 # Third party library imports
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
+
+@unique
 class UserRole(str, Enum):
     ADMIN = "admin"
     OWNER = "owner"
     MANAGER = "manager"
 
 
-class User(BaseModel):
-    username: str
-    email: str
+class UserBase(BaseModel):
+    email: EmailStr
     role: UserRole
 
 
-class UserInDB(User):
+class UserIn(UserBase):
+    password: str
+
+
+class UserOut(UserBase):
+    id: str
+
+
+class UserInDB(UserBase):
+    id: str
     hashed_password: str

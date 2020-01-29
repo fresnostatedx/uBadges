@@ -4,10 +4,13 @@ boto3==1.11.6
 botocore==1.14.6
 cffi==1.13.2
 Click==7.0
+dnspython==1.16.0
 docutils==0.15.2
+email-validator==1.0.5
 fastapi==0.46.0
 h11==0.9.0
 httptools==0.0.13
+idna==2.8
 isort==4.3.21
 jmespath==0.9.4
 lazy-object-proxy==1.4.3
