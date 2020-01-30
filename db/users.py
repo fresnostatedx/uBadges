@@ -58,9 +58,32 @@ class UsersDB:
         return user
 
 
-    async def update_user(self):
-        pass
+    async def update_user(self, user_id, email: str = None, role: UserRole = None, password: str = None):
+        user = await self.get_user_by_id(user_id)
 
+        if email:
+            if email != user.email and await self.get_user_by_email(email):
+                raise Exception
+            user.email = email
 
-    async def delete_user(self):
-        pass
+        if role:
+            user.role = role
+
+        if password:
+            user.hashed_password = get_password_hash(password)
+
+        response = self.table.update_item(
+            Key={"id": user_id},
+            UpdateExpression="SET email = :e, #user_role = :r, hashed_password = :p",
+            ExpressionAttributeNames={
+                "#user_role": "role"
+            },
+            ExpressionAttributeValues={
+                ":e": user.email,
+                ":r": user.role,
+                ":p": user.hashed_password
+            },
+            ReturnValues="ALL_NEW"
+        )
+
+        return UserInDB(**response["Attributes"])

@@ -17,8 +17,14 @@ class UserBase(BaseModel):
     role: UserRole
 
 
-class UserIn(UserBase):
+class UserInCreate(UserBase):
     password: str
+
+
+class UserInUpdate(BaseModel):
+    email: EmailStr = None
+    role: UserRole = None
+    password: str = None 
 
 
 class UserOut(UserBase):
