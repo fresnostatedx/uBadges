@@ -1,6 +1,7 @@
 # Standard library
 import uuid
 import hashlib
+import random
 from datetime import datetime
 from typing import List
 
@@ -49,7 +50,7 @@ class InvitesDB:
         return None
 
 
-    async def create(self, invite: InviteInCreate)
+    async def create(self, invite: InviteInCreate):
         invite_in_db = InviteInDB(
             id=str(uuid.uuid4()),
             nonce=generate_nonce(),

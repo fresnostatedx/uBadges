@@ -1,10 +1,12 @@
 from typing import List, Union
+from collections import ChainMap
 
 from fastapi import APIRouter, Depends, HTTPException
 from starlette.responses import Response
 from starlette.status import (
     HTTP_201_CREATED,
     HTTP_204_NO_CONTENT,
+    HTTP_400_BAD_REQUEST,
     HTTP_403_FORBIDDEN,
     HTTP_404_NOT_FOUND,
     HTTP_409_CONFLICT
@@ -13,11 +15,16 @@ from pydantic import EmailStr
 
 from db.issuers import IssuersDB
 from db.badges import BadgesDB
+from db.recipients import RecipientsDB
+from db.invites import InvitesDB
 from services.auth import get_current_user
-from services.email import send_email
+from services.email import send_invite
+from services.cert import issue_cert
 from models.issuers import IssuerIn, IssuerInDB, IssuerOut
 from models.users import UserRole, UserInDB
 from models.badges import BadgeIn, BadgeInDB
+from models.recipients import RecipientIn, RecipientInDB
+from models.invites import InviteInCreate, InviteInDB, InviteAcceptResponse
 
 router = APIRouter()
 
@@ -113,17 +120,53 @@ async def update_badge(issuer_id: str, badge_id: str, badge_in: BadgeIn, current
     pass
 
 
-# @router.post("/{issuer_id}/badges/{badge_id}/issue")
-# async def issuer_badge(
-#     issuer_id: str,
-#     badge_id: str,
-#     emails: List[EmailStr],
-#     current_user: UserInDB = Depends(get_current_user)
-# ):
-#     issuer = await IssuersDB().get_issuer_by_id(issuer_id)
-#     badge = await BadgesDB().get_badge_by_id(badge_id, issuer_id)
-#     if issuer is None or badge is None:
-#         raise HTTPException(status_code=HTTP_404_NOT_FOUND)
+@router.post("/{issuer_id}/badges/{badge_id}/issue")
+async def issuer_badge(
+    issuer_id: str,
+    badge_id: str,
+    recipients: List[RecipientIn],
+    current_user: UserInDB = Depends(get_current_user)
+):
+    issuer = await IssuersDB().get_issuer_by_id(issuer_id)
+    badge = await BadgesDB().get_badge_by_id(badge_id, issuer_id)
+    if issuer is None or badge is None:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND)
+
+    recipients_list = []
+
+    for recipient in recipients:
+        recipient_in_db = await RecipientsDB().get_recipient_by_email(recipient.email)
+        if recipient_in_db is None: 
+            recipient_in_db = await RecipientsDB().create_recipient(recipient)
+        recipients_list.append(recipient_in_db)
+
+    recipients_with_addresses = [
+        recipient for recipient in recipients_list if issuer_id in recipient.addresses
+    ]
+    
+    recipients_without_addresses = [
+        recipient for recipient in recipients_list if issuer_id not in recipient.addresses
+    ]
+
+    # Send invites to recipients that don't have an associate address yet
+    for recipient in recipients_without_addresses:
+        invite = await InvitesDB().get_by_issuer_and_recipient_ids(issuer_id, recipient.id)
+
+        # If recipient already has invite from issuer, add bade to existing invite and
+        # resend invite email
+        if invite:
+            if badge_id not in invite.badges:
+                InvitesDB().add_badge(invite.id, badge_id)
+                send_invite(recipient.email, issuer_id, invite.nonce)
+        # Otherwise, create new invite and send intro email to recipient
+        else:
+            invite = await InvitesDB().create(InviteInCreate(issuer_id=issuer_id, recipient_id=recipient.id, badge_id=badge_id))
+            send_invite(recipient.email, issuer_id, invite.nonce)
+    # For recipients that already have an associated address, generate unsigned
+    # cert, upload unsigned cert to file storage, and update recipient database
+    # entry with cert.
+    for recipient in recipients_with_addresses:
+        issue_cert(issuer, recipient, badge)
 
 
 @router.get("/{issuer_id}/profile")
@@ -178,5 +221,21 @@ async def get_revocations(issuer_id: str):
 
 
 @router.post("/{issuer_id}/intro")
-async def handle_invite_accept(issuer_id: str):
+async def handle_invite_accept(issuer_id: str, accept_response: InviteAcceptResponse):
+    invite = await InvitesDB().get_by_none(accept_response.nonce)
+    if invite is None or invite.issuer_id != issuer_id:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST)
+    recipient = await RecipientsDB().get_recipients_by_id(invite.recipient_id)
+    if recipient is None:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND)
+
+    recipient = await RecipientsDB().add_address(invite.recipient_id, issuer_id, accept_response.bitcoinAddress)
+    issuer = await IssuersDB().get_issuer_by_id(issuer_id)
+
+    for badge_id in invite.badges:
+        badge = BadgesDB().get_badge_by_id(badge_id, issuer_id)
+        issue_cert(issuer, recipient, badge)
+
+    InvitesDB().delete(invite.id)
+
     return ""

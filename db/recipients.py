@@ -8,7 +8,7 @@ import boto3
 from boto3.dynamodb.conditions import Key, Attr
 
 # Package
-from models.recipients import RecipientIn, RecipientInDB, AddressAssociation
+from models.recipients import RecipientIn, RecipientInDB
 
 
 class RecipientsDB:
@@ -45,22 +45,20 @@ class RecipientsDB:
             name=recipient.name,
             email=recipient.email,
             certs=[],
-            addresses=[]
+            addresses={}
         )
         self.table.put_item(Item=recipient_in_db.dict())
         return recipient_in_db
 
 
     async def add_address(self, recipient_id: str, issuer_id: str, address: str):
-        recipient = await self.get_recipients_by_id(recipient)
-        recipient.addresses.append(
-            AddressAssociation(issuer_id=issuer_id, public_key=address)
-        )
+        recipient = await self.get_recipients_by_id(recipient_id)
+        recipient.addresses[issuer_id] = address
         self.table.update_item(
             Key={"id": recipient_id},
             UpdateExpression="SET addresses = :a",
             ExpressionAttributeValues={
-                ":a": recipient.addresses.dict()
+                ":a": recipient.addresses
             }
         )
         return recipient

@@ -11,7 +11,7 @@ class InviteBase(BaseModel):
     recipient_id: str
 
 
-class InviteInCreate(BaseModel):
+class InviteInCreate(InviteBase):
     badge_id: str
 
 
@@ -19,3 +19,8 @@ class InviteInDB(InviteBase):
     id: str
     nonce: str
     badges: List[str]
+
+
+class InviteAcceptResponse(BaseModel):
+    nonce: str
+    bitcoinAddress: str

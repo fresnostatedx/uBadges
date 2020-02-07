@@ -1,14 +1,9 @@
 # Standard library
 from datetime import datetime
-from typing import List
+from typing import List, Dict
 
 # Third party libraries
 from pydantic import BaseModel, EmailStr, HttpUrl
-
-
-class AddressAssociation(BaseModel):
-    issuer_id: str
-    public_key: str
 
 
 class RecipientBase(BaseModel):
@@ -23,4 +18,4 @@ class RecipientIn(RecipientBase):
 class RecipientInDB(RecipientBase):
     id: str
     certs: List[HttpUrl]
-    addresses: List[AddressAssociation]
+    addresses: Dict[str, str]
