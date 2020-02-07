@@ -9,12 +9,15 @@ from starlette.status import (
     HTTP_404_NOT_FOUND,
     HTTP_409_CONFLICT
 )
+from pydantic import EmailStr
 
 from db.issuers import IssuersDB
+from db.badges import BadgesDB
 from services.auth import get_current_user
 from services.email import send_email
 from models.issuers import IssuerIn, IssuerInDB, IssuerOut
 from models.users import UserRole, UserInDB
+from models.badges import BadgeIn, BadgeInDB
 
 router = APIRouter()
 
@@ -70,6 +73,57 @@ async def update_issuer(issuer_id: str, issuer: IssuerIn, current_user: UserInDB
         ) 
 
     await IssuersDB().update_issuer(issuer_id, issuer)
+
+
+@router.get("/{issuer_id}/badges", response_model=List[BadgeInDB])
+async def get_badges_by_issuer(issuer_id: str, current_user: UserInDB = Depends(get_current_user)):
+    if await IssuersDB().get_issuer_by_id(issuer_id) is None:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND)
+    return await BadgesDB().get_badges_by_issuer_id(issuer_id)
+
+
+@router.post("/{issuer_id}/badges", response_model=BadgeInDB, status_code=HTTP_201_CREATED)
+async def create_badge(
+    issuer_id,
+    badge_in: BadgeIn,
+    response: Response,
+    current_user: UserInDB = Depends(get_current_user)
+):
+    if await IssuersDB().get_issuer_by_id(issuer_id) is None:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND)
+    if await BadgesDB().get_badge_by_name(badge_in.name):
+        raise HTTPException(status_code=HTTP_409_CONFLICT)
+    badge = await BadgesDB().create_badge(badge_in)
+    response.headers["Location"] = f"/issuers/{issuer_id}/badges/{badge.id}"
+    return badge
+
+
+@router.get("/{issuer_id}/badges/{badge_id}", response_model=BadgeInDB)
+async def get_badge_by_id(issuer_id: str, badge_id: str, current_user: UserInDB = Depends(get_current_user)):
+    if await IssuersDB().get_issuer_by_id(issuer_id) is None:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND)
+    badge = await BadgesDB().get_badge_by_id(badge_id, issuer_id)
+    if badge is None:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND)
+    return badge
+
+
+@router.put("/{issuer_id}/badges/{badge_id}", status_code=HTTP_204_NO_CONTENT)
+async def update_badge(issuer_id: str, badge_id: str, badge_in: BadgeIn, current_user: UserInDB = Depends(get_current_user)):
+    pass
+
+
+# @router.post("/{issuer_id}/badges/{badge_id}/issue")
+# async def issuer_badge(
+#     issuer_id: str,
+#     badge_id: str,
+#     emails: List[EmailStr],
+#     current_user: UserInDB = Depends(get_current_user)
+# ):
+#     issuer = await IssuersDB().get_issuer_by_id(issuer_id)
+#     badge = await BadgesDB().get_badge_by_id(badge_id, issuer_id)
+#     if issuer is None or badge is None:
+#         raise HTTPException(status_code=HTTP_404_NOT_FOUND)
 
 
 @router.get("/{issuer_id}/profile")
