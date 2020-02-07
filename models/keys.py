@@ -20,5 +20,5 @@ class KeyOut(KeyBase):
 
 class KeyInDB(KeyBase):
     private_key: str
-    date_create: datetime
+    date_created: datetime
     date_revoked: datetime = None

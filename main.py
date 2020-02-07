@@ -13,5 +13,5 @@ app = FastAPI()
 
 app.include_router(auth.router, prefix="/auth")
 app.include_router(users.router, prefix="/users")
-# app.include_router(issuers.router, prefix="/issuers")
+app.include_router(issuers.router, prefix="/issuers")
 # app.include_router(recipients.router, prefix="/recipients")

@@ -8,7 +8,8 @@ import boto3
 from boto3.dynamodb.conditions import Key, Attr
 
 # Package
-from models.issuers import IssuerInCreate, IssuerInUpdate, IssuerInDB
+from models.issuers import IssuerIn, IssuerInDB
+from models.keys import KeyInDB
 
 
 class IssuersDB:
@@ -48,13 +49,12 @@ class IssuersDB:
         return []
 
 
-    async def create_issuer(self, issuer: IssuerInCreate):
-        if await self.get_issuer_by_name(issuer.name):
-            raise Exception
-
-        issuer_id = uuid.uuid4()
+    async def create_issuer(self, issuer: IssuerIn):
+        # Not checking that issuer name is not already taken in DB.
+        # This should be used in the client that uses this function.
+        issuer_id = str(uuid.uuid4())
         key_dict = issuer.key.dict()
-        key_dict["date_created"] = datetime.utcnow()
+        key_dict["date_created"] = str(datetime.utcnow())
 
         self.table.put_item(
             Item={
@@ -65,45 +65,49 @@ class IssuersDB:
                 "email": issuer.email,
                 "image": issuer.image,
                 "keys": [key_dict],
-                revocations: []
+                "revocations": []
             }
         )
-
         return await self.get_issuer_by_id(issuer_id)
 
 
-    async def update_issuer(self, issuer_id, updates: IssuerInUpdate):
-        issuer = await self.get_issuer_by_id(issuer_id)
-
-        if updates.name is not None:
-            if issuer.name != updates.name and await self.get_issuer_by_name(name):
-                raise Exception
-
-        issuer_dict = issuer.dict()
-        update_dict = updates.dict()
-
-        for key, val in updates_dict.items():
-            if val is not None and issuer_dict[key] != val:
-                issuer_dict[key] = val
-
-        result = self.table.update_item(
-            Key={"id": issuer_id},
-            UpdateExpression="SET #issuer_name = :n, url = :u, email = :e, image = :i, owner_id = :o, keys = :k",
-            ExpressionAttributeNames={
-                "#issuer_name": "name"
-            },
-            ExpressionAttributeValues={
-                ":n": issuer_dict["name"],
-                ":u": issuer_dict["url"],
-                ":e": issuer_dict["email"],
-                ":i": issuer_dict["image"],
-                ":o": issuer_dict["owner_id"],
-                ":k": issuer_dict["keys"]
-            },
-            ReturnValues="ALL_NEW"
-        )
-
-        return IssuerInDB(**result["Attributes"])
+    async def update_issuer(self, issuer_id, issuer: IssuerIn):
+        # Not checking that issuer_id exists or that new issuer name
+        # isn't already taken in the DB. This should be handled in the client.
+        # issuer_in_db = await self.get_issuer_by_id(issuer_id)
+        # keys = issuer_in_db.keys
+        # for key in keys:
+        #     if not key.date_revoked:
+        #         key.date_revoked = datetime.utcnow()
+        # keys.append(
+        #     KeyInDB(**issuer.key.dict(), date_created=datetime.utcnow())
+        # )
+        
+        # keys = list(map(lambda k: k.dict(), keys))
+        # for k in keys:
+        #     k["date_created"] = str(k["date_created"])
+        #     k["date_revoked"] = str(k["date_revoked"])
+ 
+        # result = self.table.update_item(
+        #     Key={"id": issuer_id},
+        #     UpdateExpression="SET #issuer_name = :n, #issuer_url = :u, email = :e, image = :i, owner_id = :o, #issuer_keys = :k",
+        #     ExpressionAttributeNames={
+        #         "#issuer_name": "name",
+        #         "#issuer_url": "url",
+        #         "#issuer_keys": "keys"
+        #     },
+        #     ExpressionAttributeValues={
+        #         ":n": issuer.name, 
+        #         ":u": issuer.url,
+        #         ":e": issuer.email, 
+        #         ":i": issuer.image,
+        #         ":o": issuer.owner_id,
+        #         ":k": keys
+        #     },
+        #     ReturnValues="ALL_NEW"
+        # )
+        # return IssuerInDB(**result["Attributes"])
+        pass
     
 
     async def delete_issuer(self, issuer_id):
