@@ -1,8 +1,12 @@
+# Standard library imports
 from typing import List, Union
 from collections import ChainMap
 
+# Third party library limports
 from fastapi import APIRouter, Depends, HTTPException
+from starlette.requests import Request
 from starlette.responses import Response
+from starlette.templating import Jinja2Templates
 from starlette.status import (
     HTTP_201_CREATED,
     HTTP_204_NO_CONTENT,
@@ -13,12 +17,14 @@ from starlette.status import (
 )
 from pydantic import EmailStr
 
+# Package level imports
+from core.config import API_URL
 from db.issuers import IssuersDB
 from db.badges import BadgesDB
 from db.recipients import RecipientsDB
 from db.invites import InvitesDB
 from services.auth import get_current_user
-from services.email import send_invite
+from services.email import send_email
 from services.cert import issue_cert
 from models.issuers import IssuerIn, IssuerInDB, IssuerOut
 from models.users import UserRole, UserInDB
@@ -26,7 +32,9 @@ from models.badges import BadgeIn, BadgeInDB
 from models.recipients import RecipientIn, RecipientInDB
 from models.invites import InviteInCreate, InviteInDB, InviteAcceptResponse
 
+
 router = APIRouter()
+templates = Jinja2Templates(directory="templates")
 
 
 @router.get("/", response_model=List[IssuerOut])
@@ -122,9 +130,10 @@ async def update_badge(issuer_id: str, badge_id: str, badge_in: BadgeIn, current
 
 @router.post("/{issuer_id}/badges/{badge_id}/issue")
 async def issuer_badge(
+    request: Request,
     issuer_id: str,
     badge_id: str,
-    recipients: List[RecipientIn],
+    recipients: List[RecipientIn], 
     current_user: UserInDB = Depends(get_current_user)
 ):
     issuer = await IssuersDB().get_issuer_by_id(issuer_id)
@@ -132,45 +141,45 @@ async def issuer_badge(
     if issuer is None or badge is None:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND)
 
-    recipients_list = []
-
     for recipient in recipients:
+        # Add recipients to DB if they don't already exist.
         recipient_in_db = await RecipientsDB().get_recipient_by_email(recipient.email)
         if recipient_in_db is None: 
             recipient_in_db = await RecipientsDB().create_recipient(recipient)
-        recipients_list.append(recipient_in_db)
-
-    recipients_with_addresses = [
-        recipient for recipient in recipients_list if issuer_id in recipient.addresses
-    ]
-    
-    recipients_without_addresses = [
-        recipient for recipient in recipients_list if issuer_id not in recipient.addresses
-    ]
-
-    # Send invites to recipients that don't have an associate address yet
-    for recipient in recipients_without_addresses:
-        invite = await InvitesDB().get_by_issuer_and_recipient_ids(issuer_id, recipient.id)
-
-        # If recipient already has invite from issuer, add bade to existing invite and
-        # resend invite email
-        if invite:
+        
+        # If recipient already has public key associated with the issuer,
+        # Then just issue them a certificate. Otherwise, send the recipient
+        # an invite email.
+        if issuer_id in recipient_in_db.addresses:
+            await issue_cert(issuer, recipient_in_db, badge)
+        else:
+            invite = await InvitesDB().get_by_issuer_and_recipient_ids(issuer_id, recipient_in_db.id)
+            if invite is None:
+                invite = await InvitesDB().create(InviteInCreate(issuer_id=issuer_id, recipient_id=recipient_in_db.id, badge_id=badge_id))
+            
             if badge_id not in invite.badges:
                 InvitesDB().add_badge(invite.id, badge_id)
-                send_invite(recipient.email, issuer_id, invite.nonce)
-        # Otherwise, create new invite and send intro email to recipient
-        else:
-            invite = await InvitesDB().create(InviteInCreate(issuer_id=issuer_id, recipient_id=recipient.id, badge_id=badge_id))
-            send_invite(recipient.email, issuer_id, invite.nonce)
-    # For recipients that already have an associated address, generate unsigned
-    # cert, upload unsigned cert to file storage, and update recipient database
-    # entry with cert.
-    for recipient in recipients_with_addresses:
-        issue_cert(issuer, recipient, badge)
+
+            invite_html = templates.TemplateResponse(
+                "invite.html",
+                {
+                    "request": request,
+                    "issuer_url": f'{API_URL}/issuers/{issuer_id}/profile',
+                    "nonce": invite.nonce
+                }
+            ).body.decode('utf-8')
+
+            send_email(
+                from_address="digitalbadges@mail.fresnostate.edu",
+                to_addresses=[recipient_in_db.email],
+                subject="[DX - uBadge]",
+                body=invite_html,
+                is_html=True
+            )
 
 
 @router.get("/{issuer_id}/profile")
-async def get_issuer_profile(issuer_id: str):
+async def get_issuer_profile(request: Request, issuer_id: str):
     issuer = await IssuersDB().get_issuer_by_id(issuer_id)
     if issuer is None:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND)
@@ -184,17 +193,17 @@ async def get_issuer_profile(issuer_id: str):
             "https://w3id.org/blockcerts/v2"
         ],
         "type": "Profile",
-        "id": f"http://44.230.82.35:8000/issuers/{issuer.id}/profile",
+        "id": f"{API_URL}/issuers/{issuer.id}/profile",
         "name": issuer.name,
         "url": issuer.url,
-        "introductionURL": f"http://44.230.82.35:8000/issuers/{issuer.id}/intro",
+        "introductionURL": f"{API_URL}/issuers/{issuer.id}/intro",
         "publicKey": [
             {
             "id": f"ecdsa-koblitz-pubkey:{active_key.public_key}",
             "created": active_key.date_created
             }
         ],
-        "revocationList": f"http://44.230.82.35:8000/issuers/{issuer.id}/revocations",
+        "revocationList": f"{API_URL}/issuers/{issuer.id}/revocations",
         "image": issuer.image,
         "email": issuer.email
     }
@@ -204,9 +213,9 @@ async def get_issuer_profile(issuer_id: str):
 async def get_revocations(issuer_id: str):
     return {
         "@context": "https://w3id.org/openbadges/v2",
-        "id": f"http://44.230.82.35:8000/issuers/{issuer_id}/revocations",
+        "id": f"{API_URL}/issuers/{issuer_id}/revocations",
         "type": "RevocationList",
-        "issuer": f"http://44.230.82.35:8000/issuers/{issuer_id}/profile",
+        "issuer": f"{API_URL}/issuers/{issuer_id}/profile",
         "revokedAssertions": [
             {
             "id": "urn:uuid:93019408-acd8-4420-be5e-0400d643954a",
@@ -236,6 +245,6 @@ async def handle_invite_accept(issuer_id: str, accept_response: InviteAcceptResp
         badge = BadgesDB().get_badge_by_id(badge_id, issuer_id)
         issue_cert(issuer, recipient, badge)
 
-    InvitesDB().delete(invite.id)
+    await InvitesDB().delete(invite.id)
 
     return ""

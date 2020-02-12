@@ -65,7 +65,7 @@ class RecipientsDB:
 
 
     async def add_cert(self, recipient_id, cert_id):
-        recipient = await self.get_recipients_by_id(recipient)
+        recipient = await self.get_recipients_by_id(recipient_id)
         signed_cert_path = f"dx.ubadges.poc/certs/{cert_id}.json"
         cert_url = f"https://s3-us-west-2.amazonaws.com/{signed_cert_path}"
         recipient.certs.append(cert_url)
@@ -73,7 +73,7 @@ class RecipientsDB:
             Key={"id": recipient_id},
             UpdateExpression="SET certs = :c",
             ExpressionAttributeValues={
-                ":a": recipient.certs
+                ":c": recipient.certs
             }
         )
         return recipient

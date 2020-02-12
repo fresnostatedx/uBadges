@@ -27,15 +27,3 @@ def send_email(from_address, to_addresses, subject, body, is_html=False):
         },
         Message=msg
     )
-
-
-def send_invite(recipient_email, issuer_id, nonce):
-    link = f"http://44.230.82.35:8000/issuers/{issuer_id}/profile"
-    html = f"<p>url: {link}</p><p>code: {nonce}</p>"
-    send_email(
-        from_address="dx-cloud@mail.fresnostate.edu",
-        to_addresses=[recipient_email],
-        subject="[DX - uBadge]",
-        body=html,
-        is_html=True
-    )

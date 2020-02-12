@@ -6,6 +6,7 @@ from typing import List
 from pydantic import BaseModel
 
 class SignatureLine(BaseModel):
+    type: List[str] = ["SignatureLine", "Extension"]
     name: str
     image: str
     jobTitle: str

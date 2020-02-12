@@ -23,7 +23,6 @@ bucket = boto3.resource('s3').Bucket('dx.ubadges.poc')
 def generate_unsigned_cert(issuer: IssuerInDB, recipient: RecipientInDB, badge: BadgeInDB):
     unsigned_cert_id = str(uuid.uuid4())
     issuer_public_key = [key for key in issuer.keys if key.date_revoked is None][0]
-    recipient_address = recipient.addresses[issuer.id]
 
     # Get date in pacific time
     date = datetime.datetime.now(tz=pytz.utc)
@@ -61,19 +60,57 @@ def generate_unsigned_cert(issuer: IssuerInDB, recipient: RecipientInDB, badge: 
     #     recipient_email=recipient['email'],
     #     recipient_public_key='ecdsa-koblitz-pubkey:{}'.format(recipient['addresses'][issuer['id']]),
     #     display_html=display_html)
-        
+
+    unsigned_cert = {
+        "issuedOn": str(date),
+        "recipient": {
+            "identity": recipient.email,
+            "type": "email",
+            "hashed": False
+        },
+        "type": "Assertion",
+        "verification": {
+            "publicKey": f"ecdsa-koblitz-pubkey:{issuer_public_key}",
+            "type": ["MerkleProofVerification2017", "Extension"]
+        },
+        "@context": ["https://w3id.org/openbadges/v2", "https://w3id.org/blockcerts/v2"],
+        "badge": {
+            "issuer": {
+                "url": issuer.url,
+                "name": issuer.name,
+                "email": issuer.email,
+                "type": "Profile",
+                "id": f"http://44.230.82.35/issuers/{issuer.id}",
+                "image": issuer.image,
+                "revocationList": f"http://44.230.82.35/issuers/{issuer.id}/revocations"
+            },
+            "name": badge.name,
+            "type": "BadgeClass",
+            "critaria": badge.criteria.dict(),
+            "image": badge.image,
+            "id": f"urn:uuid:{badge.id}",
+            "description": badge.description,
+            "signatureLines": list(map(lambda signatureLine: signatureLine.dict(), badge.signatureLines))
+        },
+        "id": f"urn:uuid:{unsigned_cert_id}",
+        "recipientProfile": {
+            "publicKey": f"ecdsa-koblitz-pubkey:{recipient.addresses[issuer.id]}",
+            "name": recipient.name,
+            "type": ["RecipientProfile", "Extension"]
+        }
+    }
     return unsigned_cert_id, unsigned_cert
         
 
-def upload_unsigned_cert(issuer_id, unsigned_cert_id, unsigned_cert):
+async def upload_unsigned_cert(issuer_id, unsigned_cert_id, unsigned_cert):
     date        = datetime.datetime.now(tz=pytz.utc)
-    date        = date.astimezone(timezone('US/Pacific'))
+    
     fileobj     = BytesIO(json.dumps(unsigned_cert).encode())
-    filepath    = f"batch/{date}/{issuer_id}/unsigned/{unsigned_cert_id}.json"
+    filepath    = f"batch/{date.strftime('%Y%m%d')}/{issuer_id}/unsigned/{unsigned_cert_id}.json"
     bucket.upload_fileobj(fileobj, filepath, ExtraArgs={'ACL': 'public-read'})
     
 
-def issue_cert(issuer: IssuerInDB, recipient: RecipientInDB, badge: BadgeInDB):
+async def issue_cert(issuer: IssuerInDB, recipient: RecipientInDB, badge: BadgeInDB):
     # Get issuer's active key
     issuer_public_key = [key for key in issuer.keys if key.date_revoked is None][0]
 
@@ -84,7 +121,8 @@ def issue_cert(issuer: IssuerInDB, recipient: RecipientInDB, badge: BadgeInDB):
     unsigned_cert_id, unsigned_cert = generate_unsigned_cert(issuer, recipient, badge)
 
     # Upload unsigned cert to file storage
-    upload_unsigned_cert(issuer.id, unsigned_cert_id, unsigned_cert)
+    await upload_unsigned_cert(issuer.id, unsigned_cert_id, unsigned_cert)
     
     # Update recipients DB entry with new cert
-    RecipientsDB().add_cert(recipient.id, unsigned_cert_id)
+    await RecipientsDB().add_cert(recipient.id, unsigned_cert_id)
+
